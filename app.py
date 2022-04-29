@@ -1,4 +1,3 @@
-from typing import final
 from flask import Flask, jsonify, request
 from flask_restx import Api, Resource
 from flask_cors import CORS
@@ -20,26 +19,41 @@ model = SentenceTransformer('bert-base-nli-mean-tokens')
 #   return
 
 # 정답 채점 API
-# POST Body : { user_input : 사용자 입력답안, blank : 출제된 문제 빈칸, ...answers : 정답 }
+# POST Body : { user_input : 사용자 입력답안,  answer : 정답 , blank : 출제된 문제 빈칸,}
 # Response : answers의 개수만큼 유사도 측정치 반환
+# OFA에서 다수의 출력문이 나온다 ? 
+# 유사도를 높이기 위해 해당 출력문을 모두 사용하는 방안이 좋겠지만,
+# HTTP 특성상, stateless이기 때문에, 이 방안을 사용하려면 captioning 출력문을 전부 client에 전송해야함
+
+# API가 통합되어 있으므로 로직도 통합 구현 => 단어/문장 모두 blank/user_input 비교 & answer/user_input 비교
 @api.route('/score')
 class scoring(Resource):
   def post(self):
     try:
-      print(request.get_json())
-      sentences = ["swimming pool", "water", "sea"]
-      sentences_embeddings = model.encode(sentences)
-      sentences_embeddings.shape
+      request_body = request.get_json()
+      user_input = request_body['user_input']
+      answer = request_body['answer']
+      blank = request_body['blank']
+      similarity = list(map(str, self.compareSimilarity(user_input, answer, blank)[0]))
+      index_name = ['sentence_similarity','blank_similarity']
 
-      res = cosine_similarity(
+      response = dict(zip(index_name,similarity))
+
+      return jsonify(str(response))
+    except Exception as e:
+      print(e)
+
+  # basic operation
+  # user_input/answer & user_input/blank 각각에 대해 embedding 하고 비교
+  def compareSimilarity(self, user_input, answer, blank):
+    sentences = [user_input, answer, blank]
+    sentences_embeddings = model.encode(sentences)
+    sentences_embeddings.shape
+    res = cosine_similarity(
         [sentences_embeddings[0]],
         sentences_embeddings[1:]
       )
-      print(res[0])
-      # res [[0.67601085 0.6500472 ]]
-      return jsonify("hi")
-    except Exception as e:
-      print(e)
+    return res
 
 
 
