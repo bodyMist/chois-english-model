@@ -18,24 +18,21 @@ model = SentenceTransformer('bert-base-nli-mean-tokens')
 
 #   return
 
-# 정답 채점 API
+# 단어 빈칸 채점 API
 # POST Body : { user_input : 사용자 입력답안,  answer : 정답 , blank : 출제된 문제 빈칸,}
 # Response : answers의 개수만큼 유사도 측정치 반환
-# OFA에서 다수의 출력문이 나온다 ? 
-# 유사도를 높이기 위해 해당 출력문을 모두 사용하는 방안이 좋겠지만,
-# HTTP 특성상, stateless이기 때문에, 이 방안을 사용하려면 captioning 출력문을 전부 client에 전송해야함
-
-# API가 통합되어 있으므로 로직도 통합 구현 => 단어/문장 모두 blank/user_input 비교 & answer/user_input 비교
-@api.route('/score')
-class scoring(Resource):
-  def post(self):
+@api.route('/score/<method>')
+class wordScoring(Resource):
+  def post(self, method):
     try:
       request_body = request.get_json()
       user_input = request_body['user_input']
       answer = request_body['answer']
       blank = request_body['blank']
-      similarity = list(map(str, self.compareSimilarity(user_input, answer, blank)[0]))
-      index_name = ['sentence_similarity','blank_similarity']
+
+      raw_similarity = self.compareWord(user_input, answer, blank) if method == "word" else self.compareSentence(user_input, answer, blank)[0]
+      similarity = list(map(str, raw_similarity))
+      index_name = ['word_similarity', 'sentence_similarity']
 
       response = dict(zip(index_name,similarity))
 
@@ -43,19 +40,46 @@ class scoring(Resource):
     except Exception as e:
       print(e)
 
-  # basic operation
-  # user_input/answer & user_input/blank 각각에 대해 embedding 하고 비교
-  def compareSimilarity(self, user_input, answer, blank):
-    sentences = [user_input, answer, blank]
-    sentences_embeddings = model.encode(sentences)
-    sentences_embeddings.shape
-    res = cosine_similarity(
-        [sentences_embeddings[0]],
-        sentences_embeddings[1:]
-      )
+  # 단어 채점 basic operation
+  # user_sentence/answer & user_input/blank embedding 하고 비교
+  def compareWord(self, user_input, answer, blank):
+    print('\nStart Word Scoring')
+    user_sentence = answer.replace(blank, user_input)
+    # compare replaced sentence
+    compareSentence = [user_sentence, answer]
+    sentencesEmbedding = model.encode(compareSentence)
+    sentencesEmbedding.shape
+    sentenceCosine = (cosine_similarity(
+        [sentencesEmbedding[0]],
+        sentencesEmbedding[1:]
+      )[0]
+    )
+    # compare raw word
+    compareWord = [user_input, blank]
+    wordEmbedding = model.encode(compareWord)
+    wordEmbedding.shape
+    wordCosine = cosine_similarity(
+        [wordEmbedding[0]],
+        wordEmbedding[1:]
+      )[0]
+          
+    res = [wordCosine[0] , sentenceCosine[0]]
     return res
 
-
+  # 문장 채점 basic operation
+  # user_input/answer 비교
+  # 이후 formatting 이슈 때문에 blank(answer)도 함께 비교
+  def compareSentence(self, user_input, answer, blank):
+    print('\nStart Sentence Scoring')
+    compareSentence = [user_input, answer, blank]
+    sentencesEmbedding = model.encode(compareSentence)
+    
+    sentencesEmbedding.shape
+    res = cosine_similarity(
+        [sentencesEmbedding[0]],
+        sentencesEmbedding[1:]
+      )
+    return res
 
 
 if __name__ == '__main__':
