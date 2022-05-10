@@ -187,7 +187,7 @@ class Caption(Resource):
       image = Image.open(imageFile)
       caption = image_caption(image)
       response = dict(zip("caption", caption))
-      return jsonify({"response" : "yahoo"})
+      return jsonify(response)
     except Exception as e:
       print(e)
 
